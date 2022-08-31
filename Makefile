@@ -51,6 +51,9 @@ CFLAGS += -DDMLC_USE_UCX
 	endif
 endif
 
+
+INCPATH += -I$(TP_PATH) -I$(TP_PATH)/build -I$(TP_PATH)/third_party/libnop/include
+
 ifdef ASAN
 CFLAGS += -fsanitize=address -fno-omit-frame-pointer -fno-optimize-sibling-calls
 endif

@@ -22,6 +22,7 @@
 #include "./resender.h"
 #include "./ucx_van.h"
 #include "./zmq_van.h"
+#include "./tp_van.h"
 #include "ps/base.h"
 #include "ps/internal/customer.h"
 #include "ps/sarray.h"
@@ -100,6 +101,8 @@ Van *Van::Create(const std::string &type, Postoffice *postoffice) {
   } else if (type == "ucx") {
     return new UCXVan(postoffice);
 #endif
+  } else if (type == "tp") {
+    return new TPVan(postoffice);
   } else {
     LOG(FATAL) << "unsupported van type: " << type;
     return nullptr;
