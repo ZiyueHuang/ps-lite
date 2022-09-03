@@ -63,7 +63,7 @@ class TPVan : public Van {
     auto shmtransport = tensorpipe::transport::shm::create();
     context_->registerTransport(10, "shm", shmtransport);
     auto basicChannel = tensorpipe::channel::basic::create();
-    context_->registerChannel(0, "basic", basicChannel);
+    context_->registerChannel(100, "basic", basicChannel);
     auto uv_nthreads_str = Environment::Get()->find("DMLC_PS_UV_NTHREADS");
     int uv_nthreads = uv_nthreads_str ? atoi(uv_nthreads_str) : 0;
     if (uv_nthreads > 1) {
@@ -76,9 +76,12 @@ class TPVan : public Van {
         listeners.push_back(contexts.back()->listen(address));
       }
       auto mptChannel = tensorpipe::channel::mpt::create(std::move(contexts),
-                                                        std::move(listeners));
-      context_->registerChannel(20, "mpt", mptChannel);
+                                                         std::move(listeners));
+      context_->registerChannel(120, "mpt", mptChannel);
     }
+    // cross-process memory channel for intra-machine communication
+    auto cmaChannel = tensorpipe::channel::cma::create();
+    context_->registerChannel(130, "cma", cmaChannel);
     std::string addr = "tcp://" + node.hostname + ":" + std::to_string(node.port);
     listener_ = context_->listen({addr});
     listener_->accept([this](const tensorpipe::Error &error, std::shared_ptr<tensorpipe::Pipe> pipe) {
