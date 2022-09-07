@@ -754,6 +754,7 @@ void Van::PackMeta(const Meta &meta, char **meta_buf, int *buf_size) {
     raw->body_size = meta.body.size();
   }
   raw->push = meta.push;
+  raw->pull = meta.pull;
   raw->request = meta.request;
   raw->simple_app = meta.simple_app;
   raw->customer_id = meta.customer_id;
@@ -828,6 +829,7 @@ void Van::UnpackMeta(const char *meta_buf, int buf_size, Meta *meta) {
   meta->timestamp = raw->timestamp;
   meta->request = raw->request;
   meta->push = raw->push;
+  meta->pull = raw->pull;
   meta->simple_app = raw->simple_app;
   meta->body = std::string(raw_body, raw->body_size);
   meta->customer_id = raw->customer_id;

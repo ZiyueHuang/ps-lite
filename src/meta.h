@@ -75,6 +75,8 @@ struct RawMeta {
   int customer_id;
   // whether or not a push message
   bool push;
+  // whether or not a pull message
+  bool pull;
   // whether or not it's for SimpleApp
   bool simple_app;
   // message.data_size

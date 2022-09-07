@@ -26,7 +26,8 @@ enum MODE {
     PUSH_THEN_PULL = 0,
     PUSH_PULL = 1,
     PUSH_ONLY = 2, 
-    PULL_ONLY = 3
+    PULL_ONLY = 3,
+    ZPushPull = 4
 };
 std::unordered_map<uint64_t, KVPairs<char> > mem_map;
 
@@ -197,14 +198,15 @@ void EmptyHandler(const KVMeta &req_meta, const KVPairs<Val> &req_data, KVServer
           << "len: " << req_data.vals.size() << "\t"
           << "sender: " << req_meta.sender;
     }
-
-    // send push response (empty)
-    KVPairs<char> res;
-    server->Response(req_meta, res);
-  } else {
+  }
+  if (req_meta.pull) {
     auto iter = mem_map.find(key);
     CHECK_NE(iter, mem_map.end());
     server->Response(req_meta, iter->second);
+  } else {
+    // send push response (empty)
+    KVPairs<char> res;
+    server->Response(req_meta, res);
   }
 }
 
@@ -345,6 +347,10 @@ void push_pull(KVWorker<char>* kv,
       LOG(INFO) << "========= PULL_ONLY mode =========";
       LOG(INFO) << "========= msg_size=" << len*sizeof(char) << " bytes =========";
       break;
+    case ZPushPull: 
+      LOG(INFO) << "========= ZPushPull mode =========";
+      LOG(INFO) << "========= msg_size=" << len*sizeof(char) << " bytes =========";
+      break;
     default: CHECK(0);
   }
 
@@ -376,6 +382,9 @@ void push_pull(KVWorker<char>* kv,
         } break;
         case PULL_ONLY: {
           timestamp_list.push_back(kv->ZPull(keys, &vals, &lens));
+        } break;
+        case ZPushPull: {
+          timestamp_list.push_back(kv->ZPushPull(keys, vals, &vals, &lens));
         } break;
         default: {
           CHECK(0);
@@ -484,6 +493,7 @@ void RunWorker(int argc, char *argv[], KVWorker<char>* kv, int tid) {
     case PUSH_PULL: 
     case PUSH_ONLY: 
     case PULL_ONLY: 
+    case ZPushPull:
       push_pull(kv, server_keys, server_vals, server_lens, len, num_servers, total_key_num,
                 how_many_key_per_server, mode, tid);
       break;
