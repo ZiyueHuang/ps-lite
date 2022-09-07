@@ -48,42 +48,29 @@ class TPVan : public Van {
       }
     }
     send_pipes_.clear();
-    if (context_) {
-      context_->join();
-      context_.reset();
+    if (send_ctx_) {
+      send_ctx_->join();
+      send_ctx_.reset();
+    }
+    if (recv_ctx_) {
+      recv_ctx_->join();
+      recv_ctx_.reset();
     }
   }
 
   int Bind(Node& node, int max_retry) override {
     CHECK(!node.hostname.empty()) << "Empty hostname";
-    CHECK(!context_);
-    context_ = std::make_shared<tensorpipe::Context>();
-    auto transportContext = tensorpipe::transport::uv::create();
-    context_->registerTransport(0, "tcp", transportContext);
-    auto shmtransport = tensorpipe::transport::shm::create();
-    context_->registerTransport(10, "shm", shmtransport);
-    auto basicChannel = tensorpipe::channel::basic::create();
-    context_->registerChannel(100, "basic", basicChannel);
-    auto uv_nthreads_str = Environment::Get()->find("DMLC_PS_UV_NTHREADS");
-    int uv_nthreads = uv_nthreads_str ? atoi(uv_nthreads_str) : 0;
-    if (uv_nthreads > 1) {
-      std::vector<std::shared_ptr<tensorpipe::transport::Context>> contexts;
-      std::vector<std::shared_ptr<tensorpipe::transport::Listener>> listeners;
-      std::string address = node.hostname + ":0";
-      for (int i = 0; i < uv_nthreads; i++) {
-        auto context = tensorpipe::transport::uv::create();
-        contexts.push_back(std::move(context));
-        listeners.push_back(contexts.back()->listen(address));
-      }
-      auto mptChannel = tensorpipe::channel::mpt::create(std::move(contexts),
-                                                         std::move(listeners));
-      context_->registerChannel(120, "mpt", mptChannel);
-    }
-    // cross-process memory channel for intra-machine communication
-    auto cmaChannel = tensorpipe::channel::cma::create();
-    context_->registerChannel(130, "cma", cmaChannel);
+    CHECK(!send_ctx_ && !recv_ctx_);
+    send_ctx_ = InitContext(node);
     std::string addr = "tcp://" + node.hostname + ":" + std::to_string(node.port);
-    listener_ = context_->listen({addr});
+    auto use_recv_ctx = Environment::Get()->find("DMLC_USE_RECVCTX");
+    if (use_recv_ctx) {
+      LL << "Use another context for receiving!";
+      recv_ctx_ = InitContext(node);
+      listener_ = recv_ctx_->listen({addr});
+    } else {
+      listener_ = send_ctx_->listen({addr});
+    }
     listener_->accept([this](const tensorpipe::Error &error, std::shared_ptr<tensorpipe::Pipe> pipe) {
       OnAccepted(error, pipe);
     });
@@ -106,7 +93,7 @@ class TPVan : public Van {
     std::string addr = "tcp://" + node.hostname + ":" + std::to_string(node.port);
     bool connected = false;
     while (!connected) {
-      std::shared_ptr<tensorpipe::Pipe> pipe = context_->connect(addr);
+      std::shared_ptr<tensorpipe::Pipe> pipe = send_ctx_->connect(addr);
       tensorpipe::Message tpmsg;
       tpmsg.metadata = "ps-lite";
       auto done = std::make_shared<std::promise<bool>>();
@@ -151,7 +138,7 @@ class TPVan : public Van {
       }
       tp_msg.metadata.append(reinterpret_cast<char *>(&small_data_size), sizeof(int));
       for (int i = 0; i < msg.data.size(); i++) {
-        auto& sarray = msg.data[i];
+        auto sarray = msg.data[i];
         sarray_holder->push_back(sarray);
         int size = sarray.size();
         if (size <= 16) {
@@ -294,8 +281,39 @@ class TPVan : public Van {
     });
   }
 
+  std::shared_ptr<tensorpipe::Context> InitContext(Node& node) {
+    auto context = std::make_shared<tensorpipe::Context>();
+    auto transportContext = tensorpipe::transport::uv::create();
+    context->registerTransport(0, "tcp", transportContext);
+    auto shmtransport = tensorpipe::transport::shm::create();
+    context->registerTransport(10, "shm", shmtransport);
+    auto basicChannel = tensorpipe::channel::basic::create();
+    context->registerChannel(100, "basic", basicChannel);
+    auto uv_nthreads_str = Environment::Get()->find("DMLC_PS_UV_NTHREADS");
+    int uv_nthreads = uv_nthreads_str ? atoi(uv_nthreads_str) : 0;
+    if (uv_nthreads > 1) {
+      std::vector<std::shared_ptr<tensorpipe::transport::Context>> contexts;
+      std::vector<std::shared_ptr<tensorpipe::transport::Listener>> listeners;
+      std::string address = node.hostname + ":0";
+      for (int i = 0; i < uv_nthreads; i++) {
+        auto context = tensorpipe::transport::uv::create();
+        contexts.push_back(std::move(context));
+        listeners.push_back(contexts.back()->listen(address));
+      }
+      auto mptChannel = tensorpipe::channel::mpt::create(std::move(contexts),
+                                                         std::move(listeners));
+      context->registerChannel(120, "mpt", mptChannel);
+    }
+    // cross-process memory channel for intra-machine communication
+    // auto cmaChannel = tensorpipe::channel::cma::create();
+    // send_ctx_->registerChannel(130, "cma", cmaChannel);
+    return context;
+  }
 
-  std::shared_ptr<tensorpipe::Context> context_{nullptr};
+
+  std::shared_ptr<tensorpipe::Context> send_ctx_{nullptr};
+
+  std::shared_ptr<tensorpipe::Context> recv_ctx_{nullptr};
 
   std::shared_ptr<tensorpipe::Listener> listener_{nullptr};
 
