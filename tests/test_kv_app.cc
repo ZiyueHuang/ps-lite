@@ -43,20 +43,12 @@ void RunWorker() {
   SArray<float> rets;
   kv.Wait(kv.ZPull(keys, &rets));
 
-  // pushpull
-  SArray<float> outs;
-  for (int i = 0; i < repeat; ++i) {
-    kv.Wait(kv.ZPushPull(keys, vals, &outs));
-  }
-
   float res = 0;
-  float res2 = 0;
   for (int i = 0; i < num; ++i) {
     res += std::fabs(rets[i] - vals[i] * repeat);
-    res2 += std::fabs(outs[i] - vals[i] * 2 * repeat);
   }
   CHECK_LT(res / repeat, 1e-5);
-  LL << "error: " << res / repeat << ", " << res2 / (2 * repeat);
+  LL << "error: " << res / repeat;
 }
 
 int main(int argc, char *argv[]) {

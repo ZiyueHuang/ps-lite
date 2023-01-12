@@ -210,7 +210,6 @@ struct Meta {
         recver(kEmpty),
         request(false),
         push(false),
-        pull(false),
         simple_app(false) {}
   std::string DebugString() const {
     std::stringstream ss;
@@ -226,7 +225,7 @@ struct Meta {
       ss << ", control={ " << control.DebugString() << " }";
     } else {
       ss << ", app_id=" << app_id << ", customer_id=" << customer_id
-         << ", simple_app=" << simple_app << ", push=" << push << ", pull=" << pull
+         << ", simple_app=" << simple_app << ", push=" << push
          << ", sid=" << sid;
     }
     if (head != kEmpty) ss << ", head=" << head;
@@ -257,8 +256,6 @@ struct Meta {
   bool request;
   /** \brief whether or not a push message */
   bool push;
-  /** \brief whether or not a pull message */
-  bool pull;
   /** \brief whether or not it's for SimpleApp */
   bool simple_app;
   /** \brief an string body */

@@ -191,13 +191,7 @@ class KVWorker : public SimpleApp {
   int Pull(const std::vector<Key>& keys, std::vector<Val>* vals,
            std::vector<int>* lens = nullptr, int cmd = 0,
            const Callback& cb = nullptr) {
-    SArray<Key> skeys(keys);
-    int ts = AddPullCB(skeys, vals, lens, cmd, cb);
-    KVPairs<Val> kvs;
-    kvs.keys = skeys;
-    kvs.vals = *vals;
-    Send(ts, false, true, cmd, kvs);
-    return ts;
+    return Pull_(SArray<Key>(keys), vals, lens, cmd, cb);
   }
 
   /**
@@ -231,7 +225,7 @@ class KVWorker : public SimpleApp {
     kvs.keys = keys;
     kvs.vals = vals;
     kvs.lens = lens;
-    Send(ts, true, false, cmd, kvs);
+    Send(ts, true, cmd, kvs);
     return ts;
   }
 
@@ -246,30 +240,8 @@ class KVWorker : public SimpleApp {
   int ZPull(const SArray<Key>& keys, SArray<Val>* vals,
             SArray<int>* lens = nullptr, int cmd = 0,
             const Callback& cb = nullptr) {
-    int ts = AddPullCB(keys, vals, lens, cmd, cb);
-    KVPairs<Val> kvs;
-    kvs.keys = keys;
-    kvs.vals = *vals;
-    Send(ts, false, true, cmd, kvs);
-    return ts;
+    return Pull_(keys, vals, lens, cmd, cb);
   }
-
-  int ZPushPull(const SArray<Key>& keys,
-                const SArray<Val>& vals,
-                SArray<Val>* outs,
-                SArray<int>* lens = nullptr,
-                int cmd = 0,
-                const Callback& cb = nullptr) {
-    int ts = AddPullCB(keys, outs, lens, cmd, cb);
-    KVPairs<Val> kvs;
-    kvs.keys = keys;
-    kvs.vals = vals;
-    if (lens)
-      kvs.lens = *lens;
-    Send(ts, true, true, cmd, kvs);
-    return ts;
-  }
-
   using SlicedKVs = std::vector<std::pair<bool, KVPairs<Val>>>;
   /**
    * \brief a slicer partitions a key-value list according to the key ranges
@@ -295,7 +267,7 @@ class KVWorker : public SimpleApp {
    * \brief internal pull, C/D can be either SArray or std::vector
    */
   template <typename C, typename D>
-  int AddPullCB(const SArray<Key>& keys, C* vals, D* lens, int cmd,
+  int Pull_(const SArray<Key>& keys, C* vals, D* lens, int cmd,
             const Callback& cb);
   /**
    * \brief add a callback for a request. threadsafe.
@@ -319,7 +291,7 @@ class KVWorker : public SimpleApp {
    * @param push whether or not it is a push request
    * @param cmd command
    */
-  void Send(int timestamp, bool push, bool pull, int cmd, KVPairs<Val>& kvs);
+  void Send(int timestamp, bool push, int cmd, KVPairs<Val>& kvs);
   /** \brief internal receive handle */
   void Process(const Message& msg);
   /** \brief default kv slicer */
@@ -346,8 +318,6 @@ struct KVMeta {
   int cmd;
   /** \brief whether or not this is a push request */
   bool push;
-  /** \brief whether or not this is a pull request */
-  bool pull;
   /** \brief sender's node id */
   int sender;
   /** \brief the associated timestamp */
@@ -462,8 +432,7 @@ struct KVServerDefaultHandle {
     KVPairs<Val> res;
     if (req_meta.push) {
       CHECK_EQ(n, req_data.vals.size());
-    }
-    if (req_meta.pull) {
+    } else {
       res.keys = req_data.keys;
       res.vals.resize(n);
     }
@@ -471,8 +440,7 @@ struct KVServerDefaultHandle {
       Key key = req_data.keys[i];
       if (req_meta.push) {
         store[key] += req_data.vals[i];
-      }
-      if (req_meta.pull) {
+      } else {
         res.vals[i] = store[key];
       }
     }
@@ -540,7 +508,6 @@ void KVServer<Val>::Process(const Message& msg) {
   KVMeta meta;
   meta.cmd = msg.meta.head;
   meta.push = msg.meta.push;
-  meta.pull = msg.meta.pull;
   meta.sender = group_worker_id;
   meta.timestamp = msg.meta.timestamp;
   meta.customer_id = msg.meta.customer_id;
@@ -581,7 +548,6 @@ void KVServer<Val>::Response(const KVMeta& req, const KVPairs<Val>& res) {
   msg.meta.customer_id = req.customer_id;
   msg.meta.request = false;
   msg.meta.push = req.push;
-  msg.meta.pull = req.pull;
   msg.meta.head = req.cmd;
   msg.meta.timestamp = req.timestamp;
   msg.meta.recver = instance_worker_id;
@@ -657,7 +623,7 @@ void KVWorker<Val>::DefaultSlicer(const KVPairs<Val>& send,
 }
 
 template <typename Val>
-void KVWorker<Val>::Send(int timestamp, bool push, bool pull, int cmd, KVPairs<Val>& kvs) {
+void KVWorker<Val>::Send(int timestamp, bool push, int cmd, KVPairs<Val>& kvs) {
   // slice the message
   SlicedKVs sliced;
   slicer_(kvs, Postoffice::GetWorker()->GetServerKeyRanges(), &sliced);
@@ -689,7 +655,6 @@ void KVWorker<Val>::Send(int timestamp, bool push, bool pull, int cmd, KVPairs<V
     msg.meta.customer_id = obj_->customer_id();
     msg.meta.request = true;
     msg.meta.push = push;
-    msg.meta.pull = pull;
     msg.meta.head = cmd;
     msg.meta.timestamp = timestamp;
     msg.meta.recver = instance_server_id;
@@ -729,8 +694,7 @@ void KVWorker<Val>::Process(const Message& msg) {
   }
   // store the data for pulling
   int ts = msg.meta.timestamp;
-  // if (!msg.meta.push && msg.data.size()) {
-  if (msg.meta.pull) {
+  if (!msg.meta.push && msg.data.size()) {
     CHECK_GE(msg.data.size(), (size_t)2);
     KVPairs<Val> kvs;
     kvs.keys = msg.data[0];
@@ -765,7 +729,7 @@ void KVWorker<Val>::RunCallback(int timestamp) {
 
 template <typename Val>
 template <typename C, typename D>
-int KVWorker<Val>::AddPullCB(const SArray<Key>& keys, C* vals, D* lens, int cmd,
+int KVWorker<Val>::Pull_(const SArray<Key>& keys, C* vals, D* lens, int cmd,
                          const Callback& cb) {
   int ts = obj_->NewRequest(kServerGroup);
   AddCallback(ts, [this, ts, keys, vals, lens, cb]() mutable {
@@ -824,10 +788,10 @@ int KVWorker<Val>::AddPullCB(const SArray<Key>& keys, C* vals, D* lens, int cmd,
     if (cb) cb();
   });
 
-  // KVPairs<Val> kvs;
-  // kvs.keys = keys;
-  // kvs.vals = *vals;
-  // Send(ts, false, cmd, kvs);
+  KVPairs<Val> kvs;
+  kvs.keys = keys;
+  kvs.vals = *vals;
+  Send(ts, false, cmd, kvs);
   return ts;
 }
 
