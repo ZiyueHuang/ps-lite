@@ -62,15 +62,9 @@ class TPVan : public Van {
     CHECK(!node.hostname.empty()) << "Empty hostname";
     CHECK(!send_ctx_ && !recv_ctx_);
     send_ctx_ = InitContext(node);
+    recv_ctx_ = InitContext(node);
     std::string addr = "tcp://" + node.hostname + ":" + std::to_string(node.port);
-    auto use_recv_ctx = Environment::Get()->find("DMLC_USE_RECVCTX");
-    if (use_recv_ctx) {
-      LL << "Use another context for receiving!";
-      recv_ctx_ = InitContext(node);
-      listener_ = recv_ctx_->listen({addr});
-    } else {
-      listener_ = send_ctx_->listen({addr});
-    }
+    listener_ = recv_ctx_->listen({addr});
     listener_->accept([this](const tensorpipe::Error &error, std::shared_ptr<tensorpipe::Pipe> pipe) {
       OnAccepted(error, pipe);
     });
@@ -305,8 +299,8 @@ class TPVan : public Van {
       context->registerChannel(120, "mpt", mptChannel);
     }
     // cross-process memory channel for intra-machine communication
-    // auto cmaChannel = tensorpipe::channel::cma::create();
-    // send_ctx_->registerChannel(130, "cma", cmaChannel);
+    auto cmaChannel = tensorpipe::channel::cma::create();
+    context->registerChannel(130, "cma", cmaChannel);
     return context;
   }
 
