@@ -101,8 +101,10 @@ Van *Van::Create(const std::string &type, Postoffice *postoffice) {
   } else if (type == "ucx") {
     return new UCXVan(postoffice);
 #endif
+#ifdef DMLC_USE_TP
   } else if (type == "tp") {
     return new TPVan(postoffice);
+#endif
   } else {
     LOG(FATAL) << "unsupported van type: " << type;
     return nullptr;

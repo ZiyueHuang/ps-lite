@@ -1,5 +1,8 @@
 #ifndef PS_TP_VAN_H_
 #define PS_TP_VAN_H_
+
+#ifdef DMLC_USE_TP
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
@@ -319,4 +322,5 @@ class TPVan : public Van {
 };
 }  // namespace ps
 
+#endif // DMLC_USE_TP
 #endif  // PS_TP_VAN_H_

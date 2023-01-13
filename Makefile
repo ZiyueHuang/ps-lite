@@ -53,6 +53,7 @@ endif
 
 ifeq ($(USE_TP), 1)
 INCPATH += -I$(TP_INSTALL_PATH)/include
+CFLAGS += -DDMLC_USE_TP
 endif
 
 ifdef ASAN
