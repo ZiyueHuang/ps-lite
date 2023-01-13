@@ -67,7 +67,13 @@ class TPVan : public Van {
     send_ctx_ = InitContext(node);
     recv_ctx_ = InitContext(node);
     std::string addr = "tcp://" + node.hostname + ":" + std::to_string(node.port);
-    listener_ = recv_ctx_->listen({addr});
+    auto use_recv_ctx = Environment::Get()->find("DMLC_USE_RECVCTX");
+    if (use_recv_ctx) {
+      recv_ctx_ = InitContext(node);
+      listener_ = recv_ctx_->listen({addr});
+    } else {
+      listener_ = send_ctx_->listen({addr});
+    }
     listener_->accept([this](const tensorpipe::Error &error, std::shared_ptr<tensorpipe::Pipe> pipe) {
       OnAccepted(error, pipe);
     });
